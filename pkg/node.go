@@ -39,6 +39,11 @@ func (n *Node) startServer() error {
 		return e
 	}
 
+	n.Addr, e = net.ResolveTCPAddr(l.Addr().Network(), l.Addr().Network())
+	if e != nil {
+		return e
+	}
+
 	s := rpc.NewServer()
 	s.Register(n)
 	go s.Accept(l)
