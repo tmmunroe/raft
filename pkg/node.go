@@ -15,34 +15,44 @@ const (
 	Follower  = Role("Follower")
 )
 
+const (
+	LeaderTick   = time.Duration(2 * time.Second)
+	FollowerTick = time.Duration(7 * time.Second)
+
+	CandidateSecMin = 3
+	CandidateSecMax = 5
+)
+
 type Node struct {
 	Role   Role
-	Addr   *net.TCPAddr
+	Addr   net.TCPAddr
 	View   *RaftView
 	Log    *Log
 	Pinged chan bool
 }
 
-func InitNode(addr *net.TCPAddr) *Node {
+func InitNode(addr net.TCPAddr, others []net.TCPAddr) *Node {
 	return &Node{
 		Role:   Follower,
 		Addr:   addr,
-		Log:    nil,
-		View:   nil,
+		Log:    InitLog(),
+		View:   InitView(0, addr, others),
 		Pinged: make(chan bool),
 	}
 }
 
 func (n *Node) startServer() error {
+	log.Printf("server starting %v", n.Addr.String())
 	l, e := net.Listen(n.Addr.Network(), n.Addr.String())
 	if e != nil {
 		return e
 	}
 
-	n.Addr, e = net.ResolveTCPAddr(l.Addr().Network(), l.Addr().Network())
+	a, e := net.ResolveTCPAddr(l.Addr().Network(), l.Addr().String())
 	if e != nil {
 		return e
 	}
+	n.Addr = *a
 
 	s := rpc.NewServer()
 	s.Register(n)
@@ -51,10 +61,9 @@ func (n *Node) startServer() error {
 }
 
 func (n *Node) leaderTick() {
-	tick, _ := time.ParseDuration("3s")
-
+	log.Printf("leader ticking %v", n.Addr.String())
 	select {
-	case <-time.After(tick):
+	case <-time.After(LeaderTick):
 		n.pushLogsToFollowers()
 
 	case <-n.Pinged:
@@ -63,10 +72,11 @@ func (n *Node) leaderTick() {
 }
 
 func (n *Node) candidateTick() {
-	tick, _ := time.ParseDuration("5s")
+	log.Printf("candidate ticking %v", n.Addr.String())
 
+	randTick := RandomDuration(CandidateSecMin, CandidateSecMax)
 	select {
-	case <-time.After(tick):
+	case <-time.After(randTick):
 		log.Printf("node hasn't heard from leader")
 		n.runElection()
 
@@ -76,10 +86,10 @@ func (n *Node) candidateTick() {
 }
 
 func (n *Node) followerTick() {
-	tick, _ := time.ParseDuration("5s")
+	log.Printf("follower ticking %v", n.Addr.String())
 
 	select {
-	case <-time.After(tick):
+	case <-time.After(FollowerTick):
 		log.Printf("node hasn't heard from leader")
 		n.runElection()
 
@@ -88,7 +98,9 @@ func (n *Node) followerTick() {
 	}
 }
 
-func (n *Node) run() error {
+func (n *Node) Run() error {
+	log.Printf("node starting %v", n.Addr.String())
+
 	e := n.startServer()
 	if e != nil {
 		return e
@@ -99,11 +111,11 @@ func (n *Node) run() error {
 		case Leader:
 			n.leaderTick()
 
-		case Follower:
-			n.followerTick()
-
 		case Candidate:
 			n.candidateTick()
+
+		case Follower:
+			n.followerTick()
 		}
 
 	}

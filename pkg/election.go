@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-func (n *Node) requestNodeVote(addr *net.TCPAddr, proposedView *RaftView, t time.Duration) bool {
+func (n *Node) requestNodeVote(addr net.TCPAddr, proposedView *RaftView, t time.Duration) bool {
 	c, e := rpc.Dial(addr.Network(), addr.String())
 	if e != nil {
 		log.Printf("requestNodeVote error for %v: %v", addr, e)
@@ -34,7 +34,7 @@ func (n *Node) requestNodeVote(addr *net.TCPAddr, proposedView *RaftView, t time
 	return reply.Accepted
 }
 
-func (n *Node) requestNodeVoteWithTimeout(addr *net.TCPAddr, proposedView *RaftView, result chan bool) {
+func (n *Node) requestNodeVoteWithTimeout(addr net.TCPAddr, proposedView *RaftView, result chan bool) {
 	t, _ := time.ParseDuration("1s")
 	result <- n.requestNodeVote(addr, proposedView, t)
 }
@@ -47,6 +47,7 @@ func (n *Node) runElection() error {
 	n.View = oldView.IncrementView(n.Addr)
 	results := make(chan bool)
 
+	log.Printf("running election for epoch %v", n.View.Epoch)
 	for _, a := range n.View.Followers {
 		go n.requestNodeVoteWithTimeout(a, n.View, results)
 	}
@@ -78,8 +79,9 @@ func (n *Node) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) error
 		log.Printf("received vote request for same epoch %v", n.View.Epoch)
 
 	case args.Proposed.Epoch > n.View.Epoch:
-		reply.Accepted = true
 		n.Role = Follower
+		n.Pinged <- true
+		reply.Accepted = true
 		n.View = args.Proposed.Clone()
 		log.Printf("received vote request for new epoch %v", n.View.Epoch)
 	}

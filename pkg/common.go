@@ -1,13 +1,22 @@
 package raft
 
-import "net"
+import (
+	"math/rand"
+	"net"
+	"time"
+)
 
-func SameAddress(a *net.TCPAddr, b *net.TCPAddr) bool {
+func RandomDuration(min int, max int) time.Duration {
+	randInt := min + rand.Intn(max-min)
+	return time.Duration(randInt) * time.Second
+}
+
+func SameAddress(a net.TCPAddr, b net.TCPAddr) bool {
 	return a.Network() == b.Network() &&
 		a.String() == b.String()
 }
 
-func SameAddresses(fa []*net.TCPAddr, fb []*net.TCPAddr) bool {
+func SameAddresses(fa []net.TCPAddr, fb []net.TCPAddr) bool {
 	if len(fa) != len(fb) {
 		return false
 	}

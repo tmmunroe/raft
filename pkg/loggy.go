@@ -17,23 +17,36 @@ type Log struct {
 	Entries []LogEntry
 }
 
+func InitLog() *Log {
+	return &Log{
+		Entries: make([]LogEntry, 0),
+	}
+}
+
 func (l LogEntry) Matches(ol LogEntry) bool {
 	return l.Index == ol.Index &&
 		l.Command == ol.Command &&
 		l.Args == ol.Args
 }
 
-func (n *Node) pushLogsToFollower(addr *net.TCPAddr) {
+func (n *Node) pushLogsToFollower(addr net.TCPAddr) {
+	log.Printf("pushLogsToFollower %v %v", addr.Network(), addr.String())
 	c, e := rpc.Dial(addr.Network(), addr.String())
 	if e != nil {
 		log.Printf("pushLogsToFollower error for %v: %v", addr, e)
+		return
 	}
 
-	args := &AppendArgs{}
+	args := &AppendArgs{
+		View:    *n.View,
+		Entries: n.Log.Entries,
+	}
 	reply := &AppendReply{}
+
+	log.Printf("pushLogsToFollower client %v args %v, reply %v", c, args, reply)
 	call := c.Go("Node.AppendEntries", args, reply, nil)
 
-	t, _ := time.ParseDuration("1s")
+	t := time.Duration(1 * time.Second)
 	select {
 	case <-time.After(t):
 		log.Printf("pushLogsToFollower timed out for %v", addr)
@@ -47,6 +60,7 @@ func (n *Node) pushLogsToFollower(addr *net.TCPAddr) {
 }
 
 func (n *Node) pushLogsToFollowers() error {
+	log.Printf("pushing logs to followers... %v", n.View)
 	for _, addr := range n.View.Followers {
 		go n.pushLogsToFollower(addr)
 	}
@@ -55,6 +69,7 @@ func (n *Node) pushLogsToFollowers() error {
 }
 
 func (n *Node) AppendEntries(args *AppendArgs, reply *AppendReply) error {
+	log.Printf("received append entries from view\n %v \n %v", args.View, n.View)
 	switch {
 	case args.View.Epoch < n.View.Epoch:
 		reply.Accepted = false

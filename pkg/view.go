@@ -1,11 +1,23 @@
 package raft
 
-import "net"
+import (
+	"net"
+)
 
 type RaftView struct {
 	Epoch     int
-	Leader    *net.TCPAddr
-	Followers []*net.TCPAddr
+	Leader    net.TCPAddr
+	Followers []net.TCPAddr
+}
+
+func InitView(e int, l net.TCPAddr, f []net.TCPAddr) *RaftView {
+	view := &RaftView{
+		Epoch:     e,
+		Leader:    l,
+		Followers: make([]net.TCPAddr, 0),
+	}
+	view.Followers = append(view.Followers, f...)
+	return view
 }
 
 func (rv RaftView) Quorum() int {
@@ -30,17 +42,17 @@ func (rv RaftView) Clone() *RaftView {
 	}
 }
 
-func (rv RaftView) IncrementView(newLeader *net.TCPAddr) *RaftView {
-	if SameAddress(rv.Leader, newLeader) {
-		return nil
-	}
-
-	newFollowers := []*net.TCPAddr{rv.Leader}
+func (rv RaftView) IncrementView(newLeader net.TCPAddr) *RaftView {
+	newFollowers := []net.TCPAddr{}
 	for _, foll := range rv.Followers {
 		if SameAddress(foll, newLeader) {
 			continue
 		}
 		newFollowers = append(newFollowers, foll)
+	}
+
+	if !SameAddress(rv.Leader, newLeader) {
+		newFollowers = append(newFollowers, rv.Leader)
 	}
 
 	return &RaftView{
