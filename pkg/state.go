@@ -56,6 +56,17 @@ func (ms *MapState) set(key string, value string) error {
 	return nil
 }
 
+func (ms *MapState) Clone() *MapState {
+	ms.mu.RLock()
+	defer ms.mu.RUnlock()
+
+	ns := InitMapState()
+	for k, v := range ms.State {
+		ns.State[k] = v
+	}
+	return ns
+}
+
 func (ms *MapState) Apply(command string, args interface{}) (interface{}, error) {
 	log.Printf("applying %v args %v", command, args)
 	mcArgs := args.(MapCommandArgs)
