@@ -1,8 +1,10 @@
 package raft
 
 type AppendArgs struct {
-	View    RaftView
-	Entries []LogEntry
+	View           RaftView
+	LastIndex      int
+	Entries        []LogEntry
+	CommittedIndex int
 }
 
 type AppendReply struct {

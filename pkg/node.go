@@ -4,6 +4,7 @@ import (
 	"log"
 	"net"
 	"net/rpc"
+	"sync"
 	"time"
 )
 
@@ -24,20 +25,35 @@ const (
 )
 
 type Node struct {
-	Role   Role
-	Addr   net.TCPAddr
-	View   *RaftView
-	Log    *Log
+	Role  Role
+	Addr  net.TCPAddr
+	View  *RaftView
+	Log   *Log
+	State State
+
+	cLock          sync.Mutex
+	CommittedIndex int
+	PushedIndex    map[string]int
+
 	Pinged chan bool
 }
 
-func InitNode(addr net.TCPAddr, others []net.TCPAddr) *Node {
+func InitNode(addr net.TCPAddr, others []net.TCPAddr, state State) *Node {
+	pushed := make(map[string]int)
+	for _, o := range others {
+		pushed[o.String()] = 0
+	}
+
 	return &Node{
-		Role:   Follower,
-		Addr:   addr,
-		Log:    InitLog(),
-		View:   InitView(0, addr, others),
-		Pinged: make(chan bool),
+		Role:           Follower,
+		Addr:           addr,
+		Log:            InitLog(),
+		View:           InitView(0, addr, others),
+		State:          state,
+		cLock:          sync.Mutex{},
+		CommittedIndex: 0,
+		PushedIndex:    pushed,
+		Pinged:         make(chan bool),
 	}
 }
 
@@ -65,6 +81,7 @@ func (n *Node) leaderTick() {
 	select {
 	case <-time.After(LeaderTick):
 		n.pushLogsToFollowers()
+		n.commitLogs(n.minPushedIndex())
 
 	case <-n.Pinged:
 		log.Printf("node heard from leader")

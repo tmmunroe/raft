@@ -55,8 +55,9 @@ func main() {
 		return
 	}
 
+	s := raft.InitMapState()
 	addr, others := splitAddresses(server)
-	n := raft.InitNode(addr, others)
+	n := raft.InitNode(addr, others, s)
 	e := n.Run()
 
 	log.Printf("node stopped with error: %v", e)
