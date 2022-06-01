@@ -25,11 +25,12 @@ const (
 )
 
 type Node struct {
-	Role  Role
-	Addr  net.TCPAddr
-	View  *RaftView
-	Log   *Log
-	State State
+	Role          Role
+	Addr          net.TCPAddr
+	View          *RaftView
+	Log           *Log
+	State         *MapState
+	ClientService *ClientService
 
 	cLock          sync.Mutex
 	CommittedIndex int
@@ -38,7 +39,7 @@ type Node struct {
 	Pinged chan bool
 }
 
-func InitNode(addr net.TCPAddr, others []net.TCPAddr, state State) *Node {
+func InitNode(addr net.TCPAddr, others []net.TCPAddr, state *MapState) *Node {
 	pushed := make(map[string]int)
 	for _, o := range others {
 		pushed[o.String()] = 0
@@ -50,8 +51,9 @@ func InitNode(addr net.TCPAddr, others []net.TCPAddr, state State) *Node {
 		Log:            InitLog(),
 		View:           InitView(0, addr, others),
 		State:          state,
+		ClientService:  InitClientService(),
 		cLock:          sync.Mutex{},
-		CommittedIndex: 0,
+		CommittedIndex: -1,
 		PushedIndex:    pushed,
 		Pinged:         make(chan bool),
 	}
@@ -72,12 +74,24 @@ func (n *Node) startServer() error {
 
 	s := rpc.NewServer()
 	s.Register(n)
+	s.Register(n.ClientService)
+	n.ClientService.Node = n
+
 	go s.Accept(l)
 	return nil
 }
 
+func (n *Node) report() {
+	log.Printf("%v %v report (lastCommitted: %v, pushed: %v)", n.Role, n.Addr.String(), n.CommittedIndex, n.PushedIndex)
+	log.Print(n.View.report())
+	log.Print(n.Log.report())
+	log.Print(n.State.report())
+	log.Print(n.ClientService.report())
+}
+
 func (n *Node) leaderTick() {
 	log.Printf("leader ticking %v", n.Addr.String())
+	n.report()
 	select {
 	case <-time.After(LeaderTick):
 		n.pushLogsToFollowers()

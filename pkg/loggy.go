@@ -1,6 +1,7 @@
 package raft
 
 import (
+	"fmt"
 	"log"
 	"math"
 	"net"
@@ -14,7 +15,7 @@ type LogEntry struct {
 	Index   int
 	Epoch   int
 	Command string
-	Args    interface{}
+	Args    MapCommandArgs
 }
 
 type Log struct {
@@ -23,7 +24,7 @@ type Log struct {
 }
 
 func InitLog() *Log {
-	initialLogEntry := LogEntry{Index: -1, Epoch: 0, Command: "", Args: nil}
+	initialLogEntry := LogEntry{Index: 0, Epoch: 0, Command: NoOp, Args: MapCommandArgs{}}
 	return &Log{
 		mu:      sync.RWMutex{},
 		Entries: []LogEntry{initialLogEntry},
@@ -34,6 +35,13 @@ func (l LogEntry) Matches(ol LogEntry) bool {
 	return l.Index == ol.Index &&
 		l.Command == ol.Command &&
 		l.Args == ol.Args
+}
+
+func (l *Log) report() string {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+
+	return fmt.Sprintf("log: %v entries, last entry: %v... all entries: %v", len(l.Entries), l.Last(), l.Entries)
 }
 
 func (l *Log) Len() int {
@@ -48,6 +56,23 @@ func (l *Log) Last() LogEntry {
 	defer l.mu.RUnlock()
 
 	return l.Entries[len(l.Entries)-1]
+}
+
+func (l *Log) AddNewLogEntry(command string, args MapCommandArgs, epoch int) *LogEntry {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	last := l.Entries[len(l.Entries)-1]
+	index := last.Index + 1
+	entry := LogEntry{
+		Index:   index,
+		Epoch:   epoch,
+		Command: command,
+		Args:    args,
+	}
+	l.Entries = append(l.Entries, entry)
+
+	return &entry
 }
 
 func (l *Log) Append(entries ...LogEntry) {
@@ -88,6 +113,10 @@ func (n *Node) minPushedIndex() int {
 	n.cLock.Lock()
 	defer n.cLock.Unlock()
 
+	if len(n.PushedIndex) == 0 {
+		return n.Log.Last().Index
+	}
+
 	min := math.MaxInt
 	for _, pushed := range n.PushedIndex {
 		if pushed < min {
@@ -102,9 +131,14 @@ func (n *Node) commitLogs(maxToCommit int) {
 	n.cLock.Lock()
 	defer n.cLock.Unlock()
 
-	uncommitted := n.Log.LogsBetween(n.CommittedIndex, maxToCommit)
+	nextToCommit := n.CommittedIndex + 1
+	uncommitted := n.Log.LogsBetween(nextToCommit, maxToCommit)
 	for _, entry := range uncommitted {
-		n.State.Apply(entry.Command, entry.Args)
+		reply, err := n.State.Apply(entry.Command, entry.Args)
+		if err != nil {
+			log.Printf("error committing logs: %v", err)
+		}
+		n.ClientService.notify(entry, reply)
 	}
 
 	n.CommittedIndex = maxToCommit

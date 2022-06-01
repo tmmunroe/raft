@@ -6,12 +6,9 @@ import (
 	"sync"
 )
 
-type State interface {
-	Apply(command string, args interface{}) (interface{}, error)
-}
-
 const (
-	SetValue string = "SetValue"
+	NoOp     string = "NoOp"
+	PutValue string = "PutValue"
 	GetValue string = "GetValue"
 )
 
@@ -35,6 +32,13 @@ func InitMapState() *MapState {
 		mu:    sync.RWMutex{},
 		State: make(map[string]string),
 	}
+}
+
+func (ms *MapState) report() string {
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
+
+	return fmt.Sprintf("state: %v", ms.State)
 }
 
 func (ms *MapState) get(key string) (string, error) {
@@ -67,26 +71,29 @@ func (ms *MapState) Clone() *MapState {
 	return ns
 }
 
-func (ms *MapState) Apply(command string, args interface{}) (interface{}, error) {
+func (ms *MapState) Apply(command string, args MapCommandArgs) (MapCommandResult, error) {
 	log.Printf("applying %v args %v", command, args)
-	mcArgs := args.(MapCommandArgs)
-	k, v := mcArgs.Key, mcArgs.Value
+	k, v := args.Key, args.Value
 
 	switch command {
-	case SetValue:
+	case PutValue:
 		e := ms.set(k, v)
 		if e != nil {
-			return nil, e
+			return MapCommandResult{}, e
 		}
 		return MapCommandResult{Key: k, Value: v}, nil
 
 	case GetValue:
 		r, e := ms.get(k)
 		if e != nil {
-			return nil, e
+			return MapCommandResult{}, e
 		}
 		return MapCommandResult{Key: k, Value: r}, nil
-	}
 
-	return nil, nil
+	case NoOp:
+		return MapCommandResult{}, nil
+
+	default:
+		return MapCommandResult{}, fmt.Errorf("unknown command %v", command)
+	}
 }

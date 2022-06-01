@@ -1,6 +1,7 @@
 package raft
 
 import (
+	"fmt"
 	"net"
 )
 
@@ -18,6 +19,10 @@ func InitView(e int, l net.TCPAddr, f []net.TCPAddr) *RaftView {
 	}
 	view.Followers = append(view.Followers, f...)
 	return view
+}
+
+func (rv RaftView) report() string {
+	return fmt.Sprintf("view: epoch %v, leader %v, follower count %v", rv.Epoch, rv.Leader.String(), len(rv.Followers))
 }
 
 func (rv RaftView) Quorum() int {

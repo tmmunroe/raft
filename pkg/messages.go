@@ -19,3 +19,18 @@ type RequestVoteArgs struct {
 type RequestVoteReply struct {
 	Accepted bool
 }
+
+type ClientCommandArgs struct {
+	Id      int64
+	Command string
+	Args    MapCommandArgs
+}
+
+type ClientCommandReply struct {
+	Id      int64
+	Command string
+	Result  MapCommandResult
+
+	Error error
+	View  RaftView
+}
